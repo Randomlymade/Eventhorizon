@@ -621,8 +621,8 @@ html[data-layout=glass][data-layout] body .dockopt button[aria-pressed=true]{bac
 html[data-layout=glass][data-layout] body #dlBtn{border-radius:999px}
 
 /* ================= v9: big map, one tile, tab cover ================= */
-.wrap.wide{max-width:1720px}
-.chart .map-col{max-width:1660px}
+.wrap.wide{max-width:1180px}
+.chart .map-col{max-width:960px}
 .chart{margin:0 0 70px}
 .readout:empty{display:none}
 .prints{display:flex;flex-wrap:wrap;justify-content:center;gap:16px;max-width:none;margin:0 auto 64px;padding:0}
@@ -633,8 +633,17 @@ html[data-layout=glass][data-layout] body #dlBtn{border-radius:999px}
 .cloakopt button[aria-pressed=true]{border-color:var(--bone);background:rgba(128,128,128,.16);box-shadow:inset 3px 0 0 var(--red)}
 #cloak{position:fixed;inset:0;z-index:2147483000;display:none;pointer-events:none;background:#9bdcf7 center top/cover no-repeat}
 body.cloaked #cloak{display:block}
-html[data-layout=glass][data-layout] body .chart .map-col{max-width:1660px}
+html[data-layout=glass][data-layout] body .chart .map-col{max-width:960px}
 html[data-layout=glass][data-layout] body .prints{display:flex;gap:16px;max-width:none;margin:0 auto 64px}
+.coverimg{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.coverimg .th{width:100%;aspect-ratio:21/9;border:1px solid var(--rule2);background:#9bdcf7 center top/cover no-repeat}
+.coverimg.drag .th{border-color:var(--bone);outline:2px dashed var(--bone);outline-offset:3px}
+.coverimg .cbtns{display:flex;gap:8px;flex-wrap:wrap}
+.coverimg .cbtns button{flex:1 1 auto;padding:9px 10px;background:transparent;border:1px solid var(--rule2);cursor:pointer;color:var(--paper);font-size:14px}
+.coverimg .cbtns button:hover{border-color:var(--bone)}
+.coverimg .cstat{margin:0;min-height:1.3em;font-size:13px;color:var(--bone)}
+html[data-layout=glass][data-layout] body .coverimg .th{border-radius:16px;border-color:var(--edge)}
+html[data-layout=glass][data-layout] body .coverimg .cbtns button{border-radius:18px;border-color:var(--edge);background:var(--glass)}
 html[data-layout=glass][data-layout] body .cloakopt button{border-radius:18px;border-color:var(--edge);background:var(--glass)}
 html[data-layout=glass][data-layout] body .cloakopt button[aria-pressed=true]{background:var(--glass2);border-color:var(--edge2);box-shadow:inset 0 1px 0 rgba(255,255,255,.3)}
 </style>
@@ -842,7 +851,7 @@ function paint(term){
     const len=term.trim().length,t=it.t;
     const a=el('a',{href:'#/'+it.s,role:'option','aria-selected':n===0?'true':'false',tabindex:'-1'});
     a.append(el('span',{class:'no'},String(num[it.s]||'')),el('span',{html:esc(t.slice(0,i))+'<mark>'+esc(t.slice(i,i+len))+'</mark>'+esc(t.slice(i+len))}),el('small',null,it.g));
-    a.addEventListener('click',()=>closeSearch(true));
+    a.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();closeSearch(true);navigate(it.s);});
     res.append(a);
   });
   res.classList.add('open');q.setAttribute('aria-expanded','true');
@@ -954,7 +963,65 @@ buildSettings();
 
 /* ---------- tab cover: while you are away, the page shows a stand-in picture ---------- */
 const cloak=$('#cloak');
-cloak.style.backgroundImage='url("'+img('cloak')+'")';
+let COVERIMG=null;
+try{COVERIMG=localStorage.getItem('eh-cover-img')||null;}catch(e){}
+function applyCover(){
+  const u='url("'+(COVERIMG||img('cloak'))+'")';
+  cloak.style.backgroundImage=u;
+  const th=$('#coverTh');if(th)th.style.backgroundImage=u;
+}
+function coverSay(m){const s=$('.cstat',panel);if(s)s.textContent=m;}
+function coverFromBlob(blob){
+  if(!blob||!/^image\//.test(blob.type||'')){coverSay('That is not an image.');return;}
+  const fr=new FileReader();
+  fr.onerror=()=>coverSay('Could not read that image.');
+  fr.onload=()=>{
+    const im=new Image();
+    im.onerror=()=>coverSay('Could not read that image.');
+    im.onload=()=>{
+      const m=1400,s=Math.min(1,m/Math.max(im.naturalWidth,im.naturalHeight));
+      const c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.naturalWidth*s));c.height=Math.max(1,Math.round(im.naturalHeight*s));
+      const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
+      let d;try{d=c.toDataURL('image/jpeg',.85);}catch(e){coverSay('Could not use that image.');return;}
+      COVERIMG=d;let saved=true;
+      try{localStorage.setItem('eh-cover-img',d);}catch(e){saved=false;}
+      applyCover();
+      coverSay(saved?'Tab preview updated.':'Updated for now — this browser would not keep it after you close the page.');
+    };
+    im.src=fr.result;
+  };
+  fr.readAsDataURL(blob);
+}
+function buildCoverImg(){
+  const box=$('.coverimg .cbtns',panel);box.textContent='';
+  const file=el('input',{type:'file',accept:'image/*',hidden:'hidden'});
+  file.addEventListener('change',()=>{if(file.files[0])coverFromBlob(file.files[0]);file.value='';});
+  box.append(file,
+    el('button',{type:'button',onclick:async()=>{
+      try{
+        const items=await navigator.clipboard.read();
+        for(const it of items){const ty=it.types.find(x=>x.indexOf('image/')===0);if(ty){coverFromBlob(await it.getType(ty));return;}}
+        coverSay('No image on the clipboard. Copy one, then try again.');
+      }catch(e){coverSay('Your browser blocks that button here — press Ctrl+V (⌘V) with this panel open instead.');}
+    }},'Paste image'),
+    el('button',{type:'button',onclick:()=>file.click()},'Choose file'),
+    el('button',{type:'button',onclick:()=>{
+      COVERIMG=null;try{localStorage.removeItem('eh-cover-img');}catch(e){}
+      applyCover();coverSay('Back to the original picture.');
+    }},'Reset'));
+}
+applyCover();buildCoverImg();
+document.addEventListener('paste',e=>{
+  if(!panel.classList.contains('open'))return;
+  const items=(e.clipboardData&&e.clipboardData.items)||[];
+  for(const it of items){if(it.kind==='file'&&it.type.indexOf('image/')===0){e.preventDefault();coverFromBlob(it.getAsFile());return;}}
+});
+(function(){
+  const z=$('.coverimg',panel);
+  ['dragenter','dragover'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.add('drag');}));
+  ['dragleave','drop'].forEach(n=>z.addEventListener(n,e=>{e.preventDefault();z.classList.remove('drag');}));
+  z.addEventListener('drop',e=>{const f=e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files[0];if(f)coverFromBlob(f);});
+})();
 function setCover(on){document.body.classList.toggle('cloaked',!!(on&&COVER));}
 document.addEventListener('visibilitychange',()=>setCover(document.hidden));
 addEventListener('blur',()=>setTimeout(()=>{if(!document.hasFocus())setCover(true);},80));
@@ -1040,17 +1107,12 @@ function makeOrbit(host,onSelect){
     const w=host.clientWidth;if(!w)return;
     dpr=Math.min(devicePixelRatio||1,2);size=w;
     cv.width=Math.round(w*dpr);cv.height=Math.round(w*dpr);
-    R=w/2-26;cx=w/2;cy=w/2;kk=Math.max(.6,Math.min(2.3,R/215));draw();
+    R=w/2-26;cx=w/2;cy=w/2;kk=Math.max(.6,Math.min(1.9,R/215));draw();
   }
   function place(){
-    const PULL=110*Math.max(.7,size/700);
     for(const b of bodies){
       const a=b.a0+b.w*t,r=b.f*R;
       let x=cx+Math.cos(a)*r,y=cy+Math.sin(a)*r;
-      if(ptr){
-        const dx=ptr.x-x,dy=ptr.y-y,d=Math.hypot(dx,dy);
-        if(d<PULL&&d>.5){const pull=Math.pow(1-d/PULL,2)*14;x+=dx/d*pull;y+=dy/d*pull;}
-      }
       b.x=x;b.y=y;
     }
   }
@@ -1346,13 +1408,19 @@ function navigate(path){
   try{ if(location.hash!=='#/'+path)history.pushState(null,'','#/'+path); }catch(e){}
   route();
 }
+/* One door for every internal link (search results, tiles, rail, arrows, crumbs): a capture-phase
+   handler that swallows the click and calls navigate() directly, exactly like a click on the map. */
 document.addEventListener('click',e=>{
-  if(e.defaultPrevented||e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
+  if(e.button!==0||e.metaKey||e.ctrlKey||e.shiftKey||e.altKey)return;
   const a=e.target.closest&&e.target.closest('a[href^="#/"]');
   if(!a)return;
-  e.preventDefault();
+  e.preventDefault();e.stopPropagation();
   navigate(a.getAttribute('href'));
-});
+},true);
+document.addEventListener('auxclick',e=>{
+  const a=e.target.closest&&e.target.closest('a[href^="#/"]');
+  if(a&&e.button===1){e.preventDefault();navigate(a.getAttribute('href'));}
+},true);
 const wired=new WeakSet();
 function wireLink(a){
   if(wired.has(a))return;wired.add(a);
@@ -1444,8 +1512,13 @@ function ehFail(msg){
   <p class="sub">Drag the handle on the sidebar, or pick a side.</p>
   <div class="dockopt"></div>
   <h3>Tab preview</h3>
-  <p class="sub">When you leave the page, the tab shows a stand-in picture instead of the site.</p>
+  <p class="sub">When you leave the page, the tab shows a stand-in picture instead of the site. Open this panel, copy any image, and press Ctrl+V (⌘V on Mac) to use it.</p>
   <div class="cloakopt"></div>
+  <div class="coverimg">
+    <div class="th" id="coverTh" role="img" aria-label="Current tab preview"></div>
+    <div class="cbtns"></div>
+    <p class="cstat" role="status" aria-live="polite"></p>
+  </div>
 </div>
 
 <div id="cloak" aria-hidden="true"></div>
